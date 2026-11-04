@@ -1,5 +1,6 @@
 //! Every constant in GravStar lives in this file. If you need a new one, add
 //! it here (under the right heading) - never next to the code that uses it.
+//!
 
 // ---------------------------------------------------------------------------
 // Level
