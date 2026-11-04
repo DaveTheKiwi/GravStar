@@ -1,0 +1,15 @@
+[package]
+name = "gravstar-game"
+version = "0.1.0"
+edition = "2024"
+default-run = "gravstar-game"
+
+[dependencies]
+gravstar-core = { path = "../gravstar-core" }
+png = "0.17"
+ab_glyph = "0.2"
+[target.'cfg(windows)'.dependencies]
+sdl2 = { version = "0.37", features = ["bundled", "static-link", "unsafe_textures"] }
+
+[target.'cfg(not(windows))'.dependencies]
+sdl2 = { version = "0.37", features = ["unsafe_textures"] }
