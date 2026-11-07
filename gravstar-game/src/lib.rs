@@ -4,6 +4,8 @@
 pub mod app;
 pub mod assets;
 pub mod bmp;
+pub mod controllers;
+pub mod debris_view;
 pub mod font;
 pub mod hud_view;
 pub mod input;

@@ -34,7 +34,9 @@ impl Projectile {
 pub enum ProjectileEvent {
     /// Hit the terrain at (x, y) and cut a hole. `carve` says which tiles
     /// changed and which small pieces were cut free (for crumbling debris).
-    Terrain { x: f64, y: f64, carve: CarveResult },
+    /// `cut_x`, `cut_y` and `radius` describe the hole that was cut (the
+    /// bullet may have dug in a little before cutting).
+    Terrain { x: f64, y: f64, cut_x: f64, cut_y: f64, radius: f64, carve: CarveResult },
     /// Hit a ship (damage is already applied, unless it was immune)
     Ship { x: f64, y: f64, target: usize },
     /// Flew out of the level
@@ -169,9 +171,10 @@ impl ProjectileSystem {
                 cut_x += p.vel_x / speed * p.ptype.crater_embed;
                 cut_y += p.vel_y / speed * p.ptype.crater_embed;
             }
-            let carve = level.carve_circle(registry, cut_x, cut_y, p.ptype.crater_radius);
+            let radius = p.ptype.crater_radius;
+            let carve = level.carve_circle(registry, cut_x, cut_y, radius);
             Self::finish(p, x, y);
-            events.push(ProjectileEvent::Terrain { x, y, carve });
+            events.push(ProjectileEvent::Terrain { x, y, cut_x, cut_y, radius, carve });
             return true;
         }
 

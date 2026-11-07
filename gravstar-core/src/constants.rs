@@ -1,6 +1,5 @@
 //! Every constant in GravStar lives in this file. If you need a new one, add
 //! it here (under the right heading) - never next to the code that uses it.
-//!
 
 // ---------------------------------------------------------------------------
 // Level
@@ -246,6 +245,50 @@ pub const EXPLOSION_RADIUS: f64 = 12.0;
 pub const MAX_EXPLOSIONS: usize = 128;
 
 // ---------------------------------------------------------------------------
+// Debris (visual only): terrain that crumbles away after being cut free, and
+// chips that fly off wherever a bullet hits terrain
+// ---------------------------------------------------------------------------
+/// How fast falling pixels accelerate, in world pixels per second squared
+/// (for looks only - not the ships' gravity)
+pub const DEBRIS_GRAVITY: f64 = 320.0;
+/// Pixels per second that each cut-free piece lets go of
+pub const DEBRIS_RELEASE_RATE: f64 = 45.0;
+/// Seconds a cut-free piece hangs in place before it starts to crumble
+pub const DEBRIS_RELEASE_DELAY: f64 = 0.12;
+/// A falling pixel fades away over a time between these (seconds)
+pub const DEBRIS_LIFE_MIN: f64 = 0.60;
+pub const DEBRIS_LIFE_MAX: f64 = 1.20;
+/// Random sideways speed of a pixel that lets go: +/- this (pixels per second)
+pub const DEBRIS_SPREAD_X: f64 = 14.0;
+/// Random starting downward speed of a pixel that lets go: up to this
+pub const DEBRIS_START_FALL: f64 = 12.0;
+/// Safety cap on falling pixels (the Python version allowed 3000)
+pub const MAX_DEBRIS_PARTICLES: usize = 1500;
+/// Safety cap on pieces crumbling at once; any more are dropped unseen
+pub const MAX_DEBRIS_ISLANDS: usize = 64;
+/// How many chips each bullet hit on terrain tries to throw off the crater rim
+pub const DEBRIS_IMPACT_PIXELS: usize = 8;
+/// Speed (pixels per second) of a chip thrown from a crater: a random
+/// fraction of this, pointing away from the hit
+pub const DEBRIS_IMPACT_SPEED: f64 = 45.0;
+/// The debris has its own random numbers (so it can never disturb the game's);
+/// they start from the game's seed combined with this
+pub const DEBRIS_SEED_SALT: u64 = 0xD3B8_15C0_FFEE_0001;
+/// When drawn, a pixel's fade is rounded to this many steps, so all the
+/// pixels at one step go to the screen in a single batch
+pub const DEBRIS_ALPHA_STEPS: usize = 4;
+
+// ---------------------------------------------------------------------------
+// Level editor
+// ---------------------------------------------------------------------------
+/// The name and size of a new level
+pub const EDITOR_DEFAULT_LEVEL_NAME: &str = "Untitled";
+pub const EDITOR_DEFAULT_LEVEL_WIDTH: usize = 80;
+pub const EDITOR_DEFAULT_LEVEL_HEIGHT: usize = 45;
+/// How many edits can be undone (each step stores only the tiles it changed)
+pub const EDITOR_MAX_UNDO_STEPS: usize = 100;
+
+// ---------------------------------------------------------------------------
 // Game loop
 // ---------------------------------------------------------------------------
 /// A frame longer than this many seconds is treated as this long (after a
@@ -422,6 +465,24 @@ pub const MAX_BINDING_INDEX: i64 = 64;
 pub const DEFAULT_CONTROLLER_STICK_X: u8 = 0;
 pub const DEFAULT_CONTROLLER_STICK_Y: u8 = 1;
 pub const DEFAULT_CONTROLLER_FIRE_BUTTON: u8 = 0;
+
+// ---------------------------------------------------------------------------
+// Controllers
+// ---------------------------------------------------------------------------
+/// Rebinding: how far a stick or trigger must move from where it was when
+/// the prompt appeared to be taken as the one being bound
+pub const CONTROLLER_DETECT_THRESHOLD: f64 = 0.6;
+/// An axis that sits at least this far from the centre when untouched is a
+/// trigger (it rests at an extreme), not a stick
+pub const CONTROLLER_TRIGGER_REST_MIN: f64 = 0.5;
+/// An axis whose travel from rest to its far end is less than this is
+/// ignored (it cannot be pressed in that direction)
+pub const CONTROLLER_MIN_AXIS_SPAN: f64 = 0.1;
+/// A button-like control (fire) counts as pressed past this level, so a
+/// trigger can be used to fire
+pub const CONTROLLER_PRESSED_LEVEL: f64 = 0.5;
+/// The deadzone is held below this, so there is always some travel left
+pub const CONTROLLER_MAX_DEADZONE: f64 = 0.99;
 
 // ---------------------------------------------------------------------------
 // Menus

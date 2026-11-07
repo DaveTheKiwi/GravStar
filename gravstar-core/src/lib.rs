@@ -3,6 +3,14 @@
 
 pub mod camera;
 pub mod collision;
+pub mod controllers;
+pub mod debris_system;
+pub mod editor;
+pub mod editor_document;
+pub mod editor_history;
+pub mod editor_palette;
+pub mod editor_rotate;
+pub mod editor_selection;
 pub mod constants;
 pub mod match_rules;
 pub mod physics;

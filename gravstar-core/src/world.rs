@@ -4,6 +4,7 @@
 
 use crate::collision::{resolve_ship_contact, resolve_terrain_contact, ship_vs_ship, ship_vs_terrain};
 use crate::constants::*;
+use crate::debris_system::DebrisSystem;
 use crate::explosion_system::ExplosionSystem;
 use crate::level::Level;
 use crate::match_rules::{Match, MatchEvent};
@@ -28,6 +29,8 @@ pub struct World {
     pub ships: Vec<Ship>,
     pub projectiles: ProjectileSystem,
     pub explosions: ExplosionSystem,
+    /// Crumbling terrain and flying chips (visual only)
+    pub debris: DebrisSystem,
     /// Lives, countdowns, immunity, win and lose
     pub match_state: Match,
     pub rng: Rng,
@@ -44,6 +47,7 @@ impl World {
             ships,
             projectiles: ProjectileSystem::new(),
             explosions: ExplosionSystem::new(),
+            debris: DebrisSystem::new(seed),
             match_state,
             rng: Rng::new(seed),
         }
@@ -117,9 +121,16 @@ impl World {
         let mut changed_tiles = Vec::new();
         for event in &projectile_events {
             match event {
-                ProjectileEvent::Terrain { x, y, carve } => {
+                ProjectileEvent::Terrain { x, y, cut_x, cut_y, radius, carve } => {
                     self.explosions.spawn(*x, *y, None, None);
                     changed_tiles.extend(carve.changed.iter().copied());
+                    if !carve.changed.is_empty() {
+                        self.debris.spray_impact(&self.level, &self.registry, *cut_x, *cut_y,
+                                                 *radius);
+                    }
+                    for island in &carve.islands {
+                        self.debris.add_island(island);
+                    }
                 }
                 ProjectileEvent::Ship { x, y, .. } => {
                     self.explosions.spawn(*x, *y, None, None);
@@ -139,6 +150,7 @@ impl World {
         }
 
         self.explosions.update(dt);
+        self.debris.update(dt);
         StepReport { projectile_events, match_events, changed_tiles }
     }
 
@@ -253,6 +265,22 @@ mod tests {
         assert!(!w.explosions.explosions.is_empty() || terrain_hits > 0);
         // some floor has been cut away
         assert!((0..30).any(|c| w.level.tile(c, 18).unwrap().is_damaged()));
+    }
+
+    #[test]
+    fn hits_on_terrain_throw_chips_within_the_cap() {
+        let mut w = world();
+        start(&mut w);
+        w.ships[0].angle = std::f64::consts::PI;
+        w.ships[0].y = 300.0;
+        let fire = [ShipInput { fire: true, ..Default::default() }, ShipInput::default()];
+        let mut most = 0;
+        for _ in 0..(1.0 / DT) as usize {
+            w.step(DT, &fire);
+            most = most.max(w.debris.particles.len());
+        }
+        assert!(most > 0, "no chips were thrown");
+        assert!(most <= MAX_DEBRIS_PARTICLES);
     }
 
     #[test]

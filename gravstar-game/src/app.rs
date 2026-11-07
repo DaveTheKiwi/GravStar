@@ -11,7 +11,7 @@ use gravstar_core::level_file;
 use gravstar_core::menu::{MenuController, MenuEvent, Page};
 use gravstar_core::random::Rng;
 use gravstar_core::raster::AlphaCanvas;
-use gravstar_core::settings::{available_resolutions, default_settings_path, GraphicsSettings, SettingsStore};
+use gravstar_core::settings::{available_resolutions, default_settings_path, Device, GraphicsSettings, SettingsStore};
 use gravstar_core::ship::{Ship, ShipInput};
 use gravstar_core::ship_masks::ShipMaskSet;
 use gravstar_core::tile_registry::TileRegistry;
@@ -27,10 +27,12 @@ use sdl2::video::{FullscreenType, Window, WindowContext, WindowPos};
 
 use crate::assets::{find_assets_dir, load_png, Image};
 use crate::bmp::Picture;
+use crate::controllers::{ControllerHub, VirtualPad};
 use crate::font::{Anchor, TextRenderer};
 use crate::hud_view::{visible, HudView, MinimapView};
 use crate::input::KeyBindings;
 use crate::menu_view::MenuView;
+use crate::debris_view::DebrisView;
 use crate::ship_view::{draw_explosions, draw_projectiles, EffectTextures, ShipView};
 use crate::terrain_view::TerrainView;
 
@@ -64,6 +66,9 @@ pub struct Options {
     /// Developer option: key presses to feed in, one every few frames, as if
     /// typed (names such as "return", "down", "escape")
     pub press: Vec<String>,
+    /// Developer option: plug in a pretend controller that steers, thrusts
+    /// and fires by itself
+    pub virtual_pad: bool,
 }
 
 impl Options {
@@ -81,6 +86,7 @@ impl Options {
             settings_path: None,
             menu: None,
             press: Vec::new(),
+            virtual_pad: false,
         };
         let mut args = args;
         while let Some(arg) = args.next() {
@@ -102,6 +108,7 @@ impl Options {
                 "--screenshot" => o.screenshot = Some(PathBuf::from(value("a file name")?)),
                 "--settings" => o.settings_path = Some(PathBuf::from(value("a file name")?)),
                 "--menu" => o.menu = Some(value("a page name")?),
+                "--virtual-pad" => o.virtual_pad = true,
                 "--press" => o.press = value("a list of keys")?.split(',').map(|k| k.trim().to_string()).collect(),
                 "--help" | "-h" => return Err(USAGE.to_string()),
                 other => return Err(format!("unknown option {other}\n{USAGE}")),
@@ -127,8 +134,9 @@ Developer options:
   --menu PAGE          open a menu page (main settings graphics input player1
                        player2 rebind pause gameover)
   --press KEYS         feed in key presses, e.g. return,down,escape
+  --virtual-pad        plug in a pretend controller driven by a script
 Player 1 starts with W S A D and left Shift, player 2 with the arrow keys and
-right Shift; both can be changed in Settings > Input.  F11 toggles full screen.";
+right Shift; either can use a controller instead. All of it is in Settings > Input.  F11 toggles full screen.";
 
 /// A simple arrow, used if a ship's picture cannot be loaded
 fn placeholder_sprite() -> Image {
@@ -365,8 +373,14 @@ pub fn run(o: &Options) -> Result<(), String> {
     let mut events = sdl.event_pump()?;
     let mouse = sdl.mouse();
 
+    // ---- controllers
+    sdl2::hint::set("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
+    let virtual_pad = if o.virtual_pad { Some(VirtualPad::attach()?) } else { None };
+    let mut hub = ControllerHub::new(sdl.joystick()?, PLAYER_COUNT)?;
+
     // ---- what to draw with
     let mut terrain = TerrainView::new(&tc, &setup.registry, TILE_DEFS.iter().map(|d| d.id))?;
+    let mut debris_view = DebrisView::new();
     apply_graphics(&mut canvas, &settings.graphics, &mut terrain)?;
     let mut ship_views = Vec::new();
     {
@@ -387,7 +401,10 @@ pub fn run(o: &Options) -> Result<(), String> {
     let mut menus = MenuController::new(settings);
     menus.info.resolutions = available_resolutions(desktop, Some(menus.settings.graphics.resolution));
     menus.info.display_info = format!("Monitor: {} x {} at {} Hz", desktop.0, desktop.1, monitor.refresh_rate);
-    menus.info.controller_names = vec![None; PLAYER_COUNT];
+    for message in hub.apply_settings(&menus.settings.players) {
+        println!("{message}");
+    }
+    menus.info.controller_names = hub.names(PLAYER_COUNT);
     let mut keys: Vec<KeyBindings> = menus.settings.players.iter().map(KeyBindings::from_settings).collect();
 
     // ---- what to show first
@@ -423,6 +440,9 @@ pub fn run(o: &Options) -> Result<(), String> {
             }
         }
         for event in pending {
+            for message in hub.handle_event(&event, &menus.settings.players) {
+                println!("{message}");
+            }
             match &event {
                 Event::Quit { .. } => break 'main,
                 Event::KeyDown { scancode: Some(Scancode::F11), repeat: false, .. } => {
@@ -474,6 +494,9 @@ pub fn run(o: &Options) -> Result<(), String> {
                 }
                 MenuEvent::InputChanged => {
                     keys = menus.settings.players.iter().map(KeyBindings::from_settings).collect();
+                    for message in hub.apply_settings(&menus.settings.players) {
+                        println!("{message}");
+                    }
                 }
                 MenuEvent::SaveSettings => {
                     if !store.save(&menus.settings) {
@@ -491,6 +514,16 @@ pub fn run(o: &Options) -> Result<(), String> {
         last = now;
         let dt = if o.demo { 1.0 / 60.0 } else { real_dt };
         menus.update(real_dt);
+        if let Some(pad) = &virtual_pad {
+            pad.drive(frame, game.is_some() && !menus.is_open());
+        }
+        // Who is the controller menu waiting on? Pressing something on their
+        // controller becomes the binding.
+        menus.info.controller_names = hub.names(PLAYER_COUNT);
+        let waiting_for = menus.capture().filter(|c| c.device == Device::Controller).map(|c| c.player);
+        if let Some(binding) = hub.poll_capture(waiting_for) {
+            menus.handle_controller_binding(binding);
+        }
         menus.info.pacing_info = if menus.settings.graphics.vsync {
             format!("Frame rate: matched to the monitor ({} FPS)", monitor.refresh_rate)
         } else {
@@ -506,12 +539,16 @@ pub fn run(o: &Options) -> Result<(), String> {
         let playing = !menus.is_open();
         if let Some(g) = game.as_mut() {
             if playing {
-                let inputs = if o.demo {
-                    demo_inputs(frame)
-                } else {
-                    let state = events.keyboard_state();
-                    [keys[0].read(&state), keys[1].read(&state)]
+                let state = events.keyboard_state();
+                let players = &menus.settings.players;
+                let scripted = demo_inputs(frame);
+                let input = |p: usize| match players[p].device {
+                    Device::Controller => hub.read(p, &players[p]),
+                    // the demo plays for anyone not using a controller
+                    Device::Keyboard if o.demo => scripted[p],
+                    Device::Keyboard => keys[p].read(&state),
                 };
+                let inputs = [input(0), input(1)];
                 if o.demo && frame == DEMO_CRASH_FRAME {
                     g.world.ships[0].take_damage(1e9);
                 }
@@ -552,6 +589,7 @@ pub fn run(o: &Options) -> Result<(), String> {
                 canvas.set_clip_rect(Rect::new(cam.viewport_x, cam.viewport_y,
                                                cam.viewport_width as u32, cam.viewport_height as u32));
                 terrain.draw(&mut canvas, &tc, cam, &g.world.level, &g.world.registry)?;
+                debris_view.draw(&mut canvas, cam, &g.world.debris)?;
                 for (view, ship) in ship_views.iter_mut().zip(&g.world.ships) {
                     if !visible(ship) {
                         continue;
